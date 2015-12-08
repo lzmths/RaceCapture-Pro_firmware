@@ -180,7 +180,7 @@ SRC =		mock_uart.c \
 		$(RCP_SRC)/logger/loggerHardware.c \
 		$(RCP_SRC)/devices/cellModem.c \
 		$(RCP_SRC)/devices/bluetooth.c \
-		$(RCP_SRC)/devices/sim900.c \
+		$(RCP_SRC)/devices/cellular.c \
 		$(RCP_SRC)/logger/logger.c \
 
 
