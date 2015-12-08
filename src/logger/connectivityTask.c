@@ -138,9 +138,9 @@ static void createCombinedTelemetryTask(int16_t priority, xQueueHandle sampleQue
 
         /*cell overrides wireless*/
         if (cellEnabled) {
-            params->check_connection_status = &sim900_check_connection_status;
-            params->init_connection = &sim900_init_connection;
-            params->disconnect = &sim900_disconnect;
+            params->check_connection_status = &cellular_check_connection_status;
+            params->init_connection = &cellular_init_connection;
+            params->disconnect = &cellular_disconnect;
             params->always_streaming = false;
         }
         xTaskCreate(connectivityTask, (signed portCHAR *) "connTask", TELEMETRY_STACK_SIZE, params, priority, NULL );
@@ -170,9 +170,9 @@ static void createTelemetryConnectionTask(int16_t priority, xQueueHandle sampleQ
     params->connectionName = "Telemetry";
     params->periodicMeta = 0;
     params->connection_timeout = TELEMETRY_DISCONNECT_TIMEOUT;
-    params->disconnect = &sim900_disconnect;
-    params->check_connection_status = &sim900_check_connection_status;
-    params->init_connection = &sim900_init_connection;
+    params->disconnect = &cellular_disconnect;
+    params->check_connection_status = &cellular_check_connection_status;
+    params->init_connection = &cellular_init_connection;
     params->serial = SERIAL_TELEMETRY;
     params->sampleQueue = sampleQueue;
     params->always_streaming = false;
