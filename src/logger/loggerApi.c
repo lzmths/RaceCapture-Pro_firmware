@@ -25,7 +25,6 @@
 #include "PWM.h"
 #include "bluetooth.h"
 #include "capabilities.h"
-#include "cellModem.h"
 #include "constants.h"
 #include "cpu.h"
 #include "dateTime.h"

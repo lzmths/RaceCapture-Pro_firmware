@@ -1,4 +1,4 @@
-#include "cellModem.h"
+#include "sim900.h"
 #include "sim900_device.h"
 #include "serial.h"
 #include "modp_numtoa.h"
@@ -11,16 +11,9 @@
 
 #define min(a,b) ((a)<(b)?(a):(b))
 #define NETWORK_CONNECT_MAX_TRIES 10
-#define MAX_SUBSCRIBER_NUMBER_LENGTH 15
-#define IMEI_NUMBER_LENGTH 16
-
-static cellmodem_status_t g_cellmodem_status = CELLMODEM_STATUS_NOT_INIT;
-static char g_subscriber_number[MAX_SUBSCRIBER_NUMBER_LENGTH];
-static char g_IMEI_number[IMEI_NUMBER_LENGTH];
 
 static char *g_cellBuffer;
 static size_t g_bufferLen;
-static uint8_t g_cell_signal_strength;
 
 #define PAUSE_DELAY 100
 
@@ -30,26 +23,6 @@ static uint8_t g_cell_signal_strength;
 #define CONNECT_TIMEOUT 60000
 
 #define NO_CELL_RESPONSE -99
-
-cellmodem_status_t cellmodem_get_status( void )
-{
-    return g_cellmodem_status;
-}
-
-int cell_get_signal_strength()
-{
-    return g_cell_signal_strength;
-}
-
-char * cell_get_subscriber_number()
-{
-    return g_subscriber_number;
-}
-
-char * cell_get_IMEI()
-{
-    return g_IMEI_number;
-}
 
 void setCellBuffer(char *buffer, size_t len)
 {
@@ -133,7 +106,8 @@ static int sendCommandRetry(Serial *serial, const char * cmd, const char * expec
     return result;
 }
 
-static int read_subscriber_number(Serial *serial)
+static int read_subscriber_number(Serial *serial,
+                                  struct cellular_info *cell_info)
 {
     int res = sendCommand(serial, "AT+CNUM\r", "+CNUM:");
     if (res != NO_CELL_RESPONSE) {
@@ -143,7 +117,8 @@ static int read_subscriber_number(Serial *serial)
             char *num_end = strstr(num_start, "\"");
             if (num_end) {
                 *num_end = '\0';
-                strncpy(g_subscriber_number, num_start, MAX_SUBSCRIBER_NUMBER_LENGTH);
+                strncpy(cell_info->number, num_start,
+                        sizeof(cell_info->number));
                 pr_debug_str_msg("Cell: phone number: ", num_start);
             }
         }
@@ -151,40 +126,52 @@ static int read_subscriber_number(Serial *serial)
     return res;
 }
 
-static int getSignalStrength(Serial *serial)
+static int getSignalStrength(Serial *serial,
+                             struct cellular_info *cell_info)
 {
-    int res = sendCommand(serial, "AT+CSQ\r", "+CSQ:");
-    if (res != NO_CELL_RESPONSE && strlen(g_cellBuffer) > 6) {
+        const int res = sendCommand(serial, "AT+CSQ\r", "+CSQ:");
+
+        if (res == NO_CELL_RESPONSE || strlen(g_cellBuffer) <= 6)
+                return res;
+
         char *next_start = NULL;
         char *rssi_string = strtok_r(g_cellBuffer + 6, ",", &next_start);
         if (rssi_string != NULL) {
-            g_cell_signal_strength = modp_atoi(rssi_string);
-            pr_debug_int_msg("Cell: signal strength: ", g_cell_signal_strength);
+                const int signal = modp_atoi(rssi_string);
+                pr_debug_int_msg("Cell: signal strength: ", signal);
+                cell_info->signal = signal;
         }
-    }
-    return res;
+
+        return res;
 }
 
-static int read_IMEI(Serial *serial)
+static int read_IMEI(Serial *serial, struct cellular_info *cell_info)
 {
-    int res = sendCommand(serial, "AT+GSN\r", "");
-    if (res != NO_CELL_RESPONSE && strlen(g_cellBuffer) == 15) {
-        strncpy(g_IMEI_number, g_cellBuffer, IMEI_NUMBER_LENGTH);
-        pr_debug_str_msg("Cell: IMEI: ", g_IMEI_number);
-    }
-    return res;
+        const int res = sendCommand(serial, "AT+GSN\r", "");
+
+        if (res == NO_CELL_RESPONSE || strlen(g_cellBuffer) != 15)
+                return res;
+
+        strncpy(cell_info->imei, g_cellBuffer, sizeof(cell_info->imei));
+        pr_debug_str_msg("Cell: IMEI: ", cell_info->imei);
+
+        return res;
 }
 
-static int isNetworkConnected(Serial *serial, size_t maxRetries, size_t maxNoResponseRetries)
+static int isNetworkConnected(Serial *serial, size_t maxRetries,
+                              size_t maxNoResponseRetries)
 {
-    flushModem(serial);
-    return sendCommandRetry(serial, "AT+CREG?\r", "+CREG: 0,1|+CREG: 0,5", maxRetries, maxNoResponseRetries);
+        flushModem(serial);
+        return sendCommandRetry(serial, "AT+CREG?\r", "+CREG: 0,1|+CREG: 0,5",
+                                maxRetries, maxNoResponseRetries);
 }
 
-static int isDataReady(Serial *serial, size_t maxRetries, size_t maxNoResponseRetries)
+static int isDataReady(Serial *serial, size_t maxRetries,
+                       size_t maxNoResponseRetries)
 {
-    flushModem(serial);
-    return sendCommandRetry(serial, "AT+CGATT?\r", "+CGATT: 1", maxRetries, maxNoResponseRetries);
+        flushModem(serial);
+        return sendCommandRetry(serial, "AT+CGATT?\r", "+CGATT: 1",
+                                maxRetries, maxNoResponseRetries);
 }
 
 static int getIpAddress(Serial *serial)
@@ -361,13 +348,13 @@ static int initAPN(Serial *serial, CellularConfig *cellCfg){
     return 0;
 }
 
-int initCellModem(Serial *serial, CellularConfig *cellCfg){
-
-	size_t success = 0;
+int initCellModem(Serial *serial, CellularConfig *cellCfg,
+                  struct cellular_info *cell_info)
+{
 	size_t attempts = 0;
-	g_cellmodem_status = CELLMODEM_STATUS_NOT_INIT;
+	cell_info->status = CELLMODEM_STATUS_NOT_INIT;
 
-	while (!success && attempts++ < 3){
+	while (attempts++ < 3){
 		closeNet(serial);
 
 		if (attempts > 1){
@@ -379,21 +366,26 @@ int initCellModem(Serial *serial, CellularConfig *cellCfg){
 			powerCycleCellModem();
 		}
 
-		if (sendCommandRetry(serial, "ATZ\r", "OK", 2, 2) != 1) continue;
-		if (sendCommandRetry(serial, "ATE0\r", "OK", 2, 2) != 1) continue;
-		if (isNetworkConnected(serial, 60, 3) != 1) continue;
-		if (initAPN(serial, cellCfg) != 0) continue;
-		getSignalStrength(serial);
-		read_subscriber_number(serial);
-		read_IMEI(serial);
-		if (isDataReady(serial, 30, 2) != 1) continue;
-		success = 1;
+		if (sendCommandRetry(serial, "ATZ\r", "OK", 2, 2) != 1)
+                        continue;
+		if (sendCommandRetry(serial, "ATE0\r", "OK", 2, 2) != 1)
+                        continue;
+		if (isNetworkConnected(serial, 60, 3) != 1)
+                        continue;
+		if (initAPN(serial, cellCfg) != 0)
+                        continue;
+
+		getSignalStrength(serial, cell_info);
+		read_subscriber_number(serial, cell_info);
+		read_IMEI(serial, cell_info);
+
+		if (isDataReady(serial, 30, 2) != 1) {
+                        cell_info->status = CELLMODEM_STATUS_PROVISIONED;
+                        return 0;
+                }
 	}
-	if ( success ){
-        g_cellmodem_status = CELLMODEM_STATUS_PROVISIONED;
-        return 0;
-    } else {
-        g_cellmodem_status = CELLMODEM_STATUS_NO_NETWORK;
+
+        /* If here, we failed :( */
+        cell_info->status = CELLMODEM_STATUS_NO_NETWORK;
         return -1;
-    }
 }

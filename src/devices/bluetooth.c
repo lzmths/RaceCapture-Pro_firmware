@@ -128,7 +128,7 @@ static bool bt_get_version(DeviceConfig *config)
 {
         pr_info("BT: Retrieving version info\r\n");
 
-        char *msg = "AT+VERSION";
+        const char *msg = "AT+VERSION";
         if (!sendCommand(config, msg))
                 return false;
 
