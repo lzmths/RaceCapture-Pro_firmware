@@ -144,6 +144,7 @@ SRC =		mock_uart.c \
 		$(RCP_SRC)/cpu/cpu.c \
 		$(RCP_SRC)/usart/usart.c \
 		$(RCP_SRC)/serial/serial.c \
+		$(RCP_SRC)/serial/serial_buffer.c \
 		$(RCP_SRC)/GPIO/GPIO.c \
 		$(RCP_SRC)/watchdog/watchdog.c \
 		$(RCP_SRC)/CAN/CAN.c \

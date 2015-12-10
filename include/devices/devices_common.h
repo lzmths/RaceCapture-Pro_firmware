@@ -9,13 +9,9 @@
 #define DEVICES_COMMON_H_
 
 #include "serial.h"
+#include "serial_buffer.h"
 
-typedef struct _DeviceConfig {
-    Serial *serial;
-    char * buffer;
-    size_t length;
-} DeviceConfig;
-
+typedef struct serial_buffer DeviceConfig;
 
 #define DEVICE_INIT_SUCCESS 			0
 #define DEVICE_INIT_FAIL				1
